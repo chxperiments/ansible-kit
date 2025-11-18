@@ -1,0 +1,79 @@
+---
+- hosts: localhost
+  gather_facts: true
+  vars_files:
+    - ./creds.yml
+    - ./creds_awx.yml
+  vars:
+    export_dir: ./exports/latest
+    awx_instance: "aap"
+    resources:
+      - organizations
+      - users
+      - teams
+      - credential_types
+      - credentials
+      - notification_templates
+      - projects
+      - inventory
+      - inventory_sources
+      - job_templates
+      - workflow_job_templates
+  tasks:
+
+  - name: "BLOCK | Export AWX RESOURCES"
+    tags: export
+    block:
+    - name: "Get timestamp"
+      ansible.builtin.command: "date +%Y-%m-%d"
+      register: tstamp
+
+    - name: "Set export backup directory fact"
+      ansible.builtin.set_fact:
+        export_backup_dir: ./exports/export-{{ tstamp.stdout }}
+
+    - name: "Create a directory to store exported artifacts"
+      ansible.builtin.file:
+        path: "{{ export_dir }}"
+        recurse: true
+        state: directory
+        mode: 0750
+
+    - name: "Create backup directory"
+      ansible.builtin.file:
+        path: "{{ export_backup_dir }}"
+        recurse: true
+        state: directory
+        mode: 0750
+
+    - name: "Export artifacts from {{ awx_url }}"
+      ansible.builtin.shell: >
+          awx export -k --{{ item }} > {{ export_dir }}/{{ awx_instance }}_{{ item }}.json
+      args:
+        executable: /bin/bash
+        creates:  "{{ export_dir }}/{{ awx_instance }}_{{ item }}.json"
+      environment:
+        TOWER_HOST: "{{ awx_url }}"
+        TOWER_USERNAME: "{{ awx_username }}"
+        TOWER_PASSWORD: "{{ awx_password }}"
+      loop: "{{ resources }}"
+
+    - name: "Backup extracted manifest"
+      ansible.builtin.copy:
+        src: "{{ export_dir }}"
+        dest: "{{ export_backup_dir }}"
+
+
+  - name: "BLOCK | IMPORT AWX RESOURCES"
+    tags: import
+    block:
+    - name: "Import artifacts to {{ new_awx_url }}"
+      ansible.builtin.shell: >
+          awx import -k < {{ export_dir }}/{{ awx_instance }}_{{ item }}.json
+      args:
+        executable: /bin/bash
+      environment:
+        TOWER_HOST: "{{ new_awx_url }}"
+        TOWER_USERNAME: "{{ new_awx_username }}"
+        TOWER_PASSWORD: "{{ new_awx_password }}"
+      loop: "{{ resources }}"
