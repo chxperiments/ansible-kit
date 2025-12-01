@@ -1,0 +1,46 @@
+---
+- name: "AWX user configuration"
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+  
+  - name: 'Ensure group awx exists'
+    ansible.builtin.group:
+      name: 'awx'
+      state: present
+  
+  - name: 'Ensure user awx exists'
+    ansible.builtin.user:
+      name: 'awx'
+      group: 'awx'
+      comment: 'Dedicated user for awx'
+      state: 'present'
+      password: "{{ 'awx' | password_hash('sha512') }}"
+  - name: 'Grant root privileges to the awx user'
+    ansible.builtin.copy:
+      content: >
+        awx ALL=(ALL) NOPASSWD:ALL
+      dest: '/etc/sudoers.d/awx'
+  
+  - name: 'Ensure the .ssh directory exists'
+    ansible.builtin.file:
+      path: '/home/awx/.ssh'
+      state: directory
+      owner: awx
+      group: awx
+      recurse: true
+      mode: 0700
+  
+  - name: 'Ensure ansible controller node public key is copied'
+    ansible.builtin.copy:
+      content: "{{ lookup('file', '../files/public_key') }}"
+      dest: '/home/awx/.ssh/authorized_keys'
+  
+  - name: 'Add awx user to access.conf'
+    ansible.builtin.lineinfile:
+      path: /etc/security/access.conf
+      line: "+:awx:ALL"
+      insertafter: "^-:root:ALL"
+      state: present
+...
